@@ -1,0 +1,94 @@
+log none
+variable j universe 1 #2 3 4 5 6 7 8 9 10
+
+#Leave this at 1 since beta epsilon is then the morse well depth
+variable run_temp equal 1
+variable run_steps   equal   30000000
+variable dump_frames equal   1000
+variable samp        equal   $j
+
+shell mkdir data
+shell mkdir data/set${samp}
+
+variable seed1 equal 1234+${samp}
+variable seed2 equal 48279+${samp}
+
+variable filepath string data/set${samp}
+print "${filepath}"
+
+
+variable dump_frequency equal ${run_steps}/${dump_frames}
+variable thermo_frequency equal ${run_steps}/10000
+
+units		lj
+atom_style	atomic
+atom_modify	map array
+
+# read interactions
+pair_style   morse 1.4
+variable morse_well_depth equal 10
+read_data morse_input_phi0.2003.lmp
+include in.morsepaircoff
+
+pair_modify	shift yes
+comm_modify vel yes
+
+minimize 	1e-10 1e-10 3000 3000
+
+reset_timestep 0
+
+change_box all triclinic
+velocity all create 1 ${seed1}
+
+variable L equal xhi-xlo
+print "Box size $L"
+
+timestep 0.001
+
+
+variable varstep equal step
+variable vartemp equal temp
+variable varpress equal press
+variable varetotal equal etotal
+compute  msd all msd
+
+fix		msd all ave/time 1 1 ${thermo_frequency} c_msd[4] file ${filepath}/msd_${samp}.txt
+
+fix thermo_print 	all print ${thermo_frequency} "${varstep} ${vartemp} ${varpress} ${varetotal}" file ${filepath}/gel_equil_ageingrun_${samp}.thermo screen no
+
+thermo ${thermo_frequency}
+thermo_style custom step temp press pe
+
+
+variable       t equal stride(1000000,10000000,1000000)
+restart        v_t ${filepath}/restart
+
+
+#variable        f file /home/hb685/timechain.dat
+#variable        s equal next(f)
+#dump            6 all custom 1000  ${filepath}/gel_equil_ageingrun_${samp}.dump id type xu yu zu
+#dump_modify     6 every v_s
+  
+
+
+
+
+## Do Equilibration
+
+#fix equilibrate all nvt temp ${run_temp} ${run_temp} 1
+
+fix equilibrate all nve 
+fix thermostat  all langevin ${run_temp} ${run_temp} 0.1 ${seed2}
+
+
+
+
+run ${run_steps}
+unfix equilibrate
+
+write_restart ${filepath}/equil_${run_steps}.restart
+write_data    ${filepath}/equil_${run_steps}.restart.data
+
+clear
+next j
+jump in.gel-equilibration_nve-langevin
